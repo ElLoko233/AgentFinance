@@ -1,6 +1,7 @@
 """
 stock --> collects investment data of companies from yahoo finance.
 """
+from ast import arguments
 from re import U
 import pandas as pd
 import datetime as dt 
@@ -28,7 +29,7 @@ class Stock(Ticker):
         self.balancesheetSaveDirectory = os.path.join(self.baseStockFinancialStatementsDirectory, "balancesheet")
 
         # display currency, default to ZAR
-        self.__displayCurrency = displayCurrency
+        self.displayCurrency = displayCurrency
         self.currencyConverter = CurrencyConverter()
 
 		# Determines whether the stock data requires JSE Yahoo correction or not
@@ -40,19 +41,49 @@ class Stock(Ticker):
         # Stock info file
         self._StockInfoFilePath = os.path.join(self.baseStockDataDirectory, "StockInfo.json")
 
+        # Stock purchase history json table file
+        self._StockPurchaseHistoryFilePath = os.path.join(self.baseStockDataDirectory, "stockPurchaseHistory.json")
+
+        # Stock purchase history columns 
+        self._stockPurchaseHistoryColumns = ["DateofPurchase", "PurchasePrice", "StocksPurchased", "StockPrice", "Currency"]
+
     @property
-    def __stock_purchase_history(self) -> pd.DataFrame:
+    def stock_purchase_history(self) -> pd.DataFrame:
+        """This function will return a pandas data frame object of the details about the purchases made to the stock
+
+        Returns:
+            pd.DataFrame: the details about the purchases made to the stock
         """
-            This function will return a pandas data frame object of the details about the purchases made to the stock
-        """
-        pass
+        # check if json data table exists
+        if os.path.exists(self._StockPurchaseHistoryFilePath):
+            # Load the json data table into a pandas data frame
+            df = pd.read_json(self._StockPurchaseHistoryFilePath)
+            
+            # Converting the dates into datetime objects
+            df["DateofPurchase"] = [dt.datetime.strptime(date, "%Y-%m-%d") for date in df["DateofPurchase"]]
+            
+            # making the dates into the data frame indexes
+            df.set_index("DateofPurchase", inplace=True)
+            
+            return df
+        
+        else:
+            return pd.DataFrame
     
     @property
     def purchaseValue(self) -> float:
+        """ This function will return the total sum of money invested into the stock
+
+        Returns:
+            float: total sum of money invested into the stock
         """
-            This function will return the total sum of money invested into the stock
-        """
-        pass
+        # loading the purchase history
+        df = self.stock_purchase_history
+        
+        # creating a list of purchases made in current of the display currency
+        purchases = [self.currencyConverter.convert(amount=value, currency=currency, new_currency=self.displayCurrency) for value, currency in df[["PurchasePrice", "Currency"]].values]
+        
+        return sum(purchases)
 
     @property
     def shares(self) -> float:
@@ -108,7 +139,7 @@ class Stock(Ticker):
             gets useful info about the stock
         """
 
-        if updated:
+        if updated or not(os.path.exists(self._StockInfoFilePath)):
             # Returning current data from yahoo, if updated is true
             info = self.info
             return { key:info[key] for key in self.cleanInfoKeys}
@@ -119,11 +150,6 @@ class Stock(Ticker):
                 data = json.load(file)
 
             return data
-        
-        else:
-            # Returning current data if folder was not found
-            info = self.info
-            return { key:info[key] for key in self.cleanInfoKeys}
  
     def loadDirectories(self):
         """
@@ -157,7 +183,8 @@ class Stock(Ticker):
 
         return stockHistory
 
-    def history(self, *args, **kwargs):
+    def history(self, *args, **kwargs) -> pd.DataFrame:
+        # TODO: create a caching system
         if(self.isJSE):
             return self.__JSE_YAHOO_CORRECTION(super().history(*args, **kwargs))
         else:
@@ -198,33 +225,111 @@ class Stock(Ticker):
         check whether the current price of the stock is a discount relative to the average purchase price you made towards the stock
         """
     
-    def buyStock(self, dateOfpurch: dt.datetime, purchasePrice: int=0, stocksPurch: int=0, purchaseCurrency: str=None, save: bool=True):
+    def buyStock(self, dateOfpurch: dt.datetime, purchasePrice: float=None, stocksPurch: float=None, purchaseCurrency: str=None, save: bool=True):
         """
-            (args) purchasePrice: the money spent on a specific date to buy stock(s)
-            (args) dateOfpurch: the date at which the stock was bought, datetime object
-            (args) stocksPurch: the number of stocks purchased on the date
-            (args) purchaseCurrency: the currency used to purchase the stock, defaults to displayCurrency
-
             if purchasePrice is'nt provided the function will use the stockspurch value and the date of puchase to estimate
             how much you own and if the stockspurch is not provided the funtion will use the purchaseprice and date of puchase to estimate
             how many stocks you own.
-
+            
             Updates the purchase history of the stock, by storing the date of purchase of the stock and its price on that date, as well as the number of stocks bought and the price paid for that quantity.
+
+            Parameters:
+            -- purchasePrice: the money spent on a specific date to buy stock(s)
+            -- dateOfpurch: the date at which the stock was bought, datetime object
+            -- stocksPurch: the number of stocks purchased on the date
+            -- purchaseCurrency: the currency used to purchase the stock, defaults to displayCurrency
         """
 
-        # Raise an ValueError if both stocksPurch and purchasePrice is not given
+        # Defaulting the purchaseCurrency if no currency provided
+        purchaseCurrency = purchaseCurrency if purchaseCurrency else self.displayCurrency
 
-        # Confirming the purchase currency
+        # Getting the stocks financialCurrency
+        financialCurrency = self.cleanInfo()["financialCurrency"]
+
+        # Raise an ValueError if both stocksPurch and purchasePrice is not given
+        if not (purchasePrice or stocksPurch):
+            raise ValueError("Both stocksPurch and purchasePrice do not have a value. Please provide data for either one")
 
         # Acquire the stock price of the stock on the given date
+        stockPrice = self.history(start=dateOfpurch, end=dateOfpurch + dt.timedelta(days=1), interval="1d")["Close"][dateOfpurch]
 
         # Calculating the purchase price of the stock if it is not given
+        if not purchasePrice:
+            purchasePrice = stocksPurch * stockPrice
+
+            # Ensuring that the purchasePrice currency matches the display currency
+            if financialCurrency != self.displayCurrency:
+                purchasePrice = self.currencyConverter.convert(purchasePrice, financialCurrency, self.displayCurrency)
 
         # Calculating the stocks purchases if it is not given
+        if not stocksPurch:
+            # Ensuring that the purchase currency matches the stock financial currency
+            converted_purchasePrice = purchasePrice
+            if purchaseCurrency != financialCurrency:
+                converted_purchasePrice = self.currencyConverter.convert(purchasePrice, purchaseCurrency, financialCurrency)
 
-        # Store the data in to the stocks purchase history json table
+            stocksPurch = converted_purchasePrice / stockPrice
 
+            # Ensuring that the purchasePrice currency matches the display currency
+            if financialCurrency != self.displayCurrency:
+                purchasePrice = self.currencyConverter.convert(purchasePrice, financialCurrency, self.displayCurrency)
 
+        # Checking if the user wishes to save the data
+        if save:
+            # Creating the dataframe that will be saved
+            new_df = self.__createDataFrameforPurchaseHistory(DateofPurchase=dateOfpurch, PurchasePrice=purchasePrice, StocksPurchased=stocksPurch, StockPrice=stockPrice, Currency=self.displayCurrency)
+            
+            return self._savePurchase(new_df)
+        
+        else:
+            return {"dateOfpurch": dateOfpurch, "purchasePrice": purchasePrice, "stockPurch": stocksPurch, "stockPrice": stockPrice, "currency": self.displayCurrency}
+    
+    def __createDataFrameforPurchaseHistory(self, DateofPurchase: dt.datetime, PurchasePrice: float, StocksPurchased: float, StockPrice: float, Currency:str) -> pd.DataFrame:
+        """responsible for creating a data frame of the new purchase info
+
+        Args:
+            dateOfpurch (dt.datetime): the date that the stock was purchased
+            purchasePrice (float): the price paid to purchase the stock(s)
+            stocksPurch (float): the number of stocks purchased
+            stockPrice (float): the price for a single stock on the date of purchase
+            
+        Returns:
+            pd.DataFrame: pandas dataframe containing the new purchase data
+        """
+        
+        # Creating a new dataframe
+        df = pd.DataFrame({"DateofPurchase":[DateofPurchase.strftime("%Y-%m-%d")], "PurchasePrice":[PurchasePrice], "StocksPurchased":[StocksPurchased],"StockPrice":[StockPrice], "Currency":[Currency]})
+        
+        return df
+    
+    def _savePurchase(self, new_df: pd.DataFrame) -> bool:
+        """This code is responsible for saving the new purchase data into a data table containing the data history of the purchases made in the past
+
+        Args:
+            new_df (pd.DataFrame): the date frame containing the new purchase data
+
+        Returns:
+            bool: the updating of the file was successful or not
+        """
+        
+        # Check if there is an existing json data table file
+        if os.path.exists(self._StockPurchaseHistoryFilePath):
+            # load in the json file
+            df = pd.read_json(self._StockPurchaseHistoryFilePath)
+            
+            # getting the new data row
+            new_df_row = new_df.iloc[0]
+            
+            # adding the new data and saving the updated data table
+            df.append(new_df_row, ignore_index=True).to_json(self._StockPurchaseHistoryFilePath, indent=4)
+                    
+        else:
+            # saving the data frame into a json data table
+            new_df.to_json(self._StockPurchaseHistoryFilePath, indent=4)
+            
+        return os.path.exists(self._StockPurchaseHistoryFilePath)
 
 if __name__ == '__main__':
     tsla = Stock("CPI.JO", isJSE=True, baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance")
+
+    print(tsla.purchaseValue)
