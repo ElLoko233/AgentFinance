@@ -118,29 +118,47 @@ class Stock(Ticker):
         # loading the purchase history
         df = self.stock_purchase_history
         
-        # creating a list of purchases made in current of the display currency
-        purchases = [self.currencyConverter.convert(amount=value, currency=currency, new_currency=self.displayCurrency) for value, currency in df[["PurchasePrice", "Currency"]].values]
+        # loading the rogue purchase history
+        rogue_df = self.rogueHoldings
         
-        # TODO: add rogue data
+        # adding the purchases of made to the stock
+        purchaseValue = 0
+        for value, currency in rogue_df[["PurchasePrice", "Currency"]].values: # Rogue purchases
+            if(currency != self.displayCurrency):
+                purchaseValue += self.currencyConverter.convert(amount=value, currency=currency, new_currency=self.displayCurrency)
+            else:
+                purchaseValue += value
         
-        return sum(purchases)
+        for value, currency in df[["PurchasePrice", "Currency"]].values: # recorded purchases
+            if(currency != self.displayCurrency):
+                purchaseValue += self.currencyConverter.convert(amount=value, currency=currency, new_currency=self.displayCurrency)
+            else:
+                purchaseValue += value
+        
+        return purchaseValue
 
     @property
     def shares(self) -> float:
         """This function will return the number of shares owned in the company and if purchase history data table does not exist an exception will raised
 
-        Raises:
-            FileExistError: _description_
-
         Returns:
-            float: _description_
-        """   
-
-    @property
-    def nextDividendsDate(self) -> dt.datetime:
-        """
-            returns the date of the next dividends payout date
-        """
+            float:  the number of shares owned in the company
+        """ 
+        # loading the purchase history
+        df = self.stock_purchase_history
+        
+        # loading the rogue purchase history
+        rogue_df = self.rogueHoldings
+        
+        # adding the stocks owned in the stock
+        stocks = 0
+        for value in rogue_df["StocksPurchased"].values: # Rogue purchases
+            stocks += value
+        
+        for value in df["StocksPurchased"].values: # recorded purchases
+            stocks += value
+        
+        return stocks
         
     @property
     def saveCashFlow(self):
@@ -450,9 +468,9 @@ class Stock(Ticker):
         return os.path.exists(self._RogueStockHoldingsFilePath)
     
 if __name__ == '__main__':
-    tsla = Stock("TSLA", baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance", displayCurrency="ZAR")
+    tsla = Stock("msft", baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance", displayCurrency="ZAR")
     
     if not os.path.exists(tsla.baseStockDataDirectory):
         tsla.loadDirectories()
 
-    print(tsla.buyStock(dt.datetime.today().date(), 400, purchaseCurrency="ZAR"))
+    print(tsla.balance_sheet)
