@@ -8,7 +8,7 @@ This module contains the following classes:
 The Stock class contains the following instance methods:
     -`stock_purchase_history`
 """
-from xmlrpc.client import boolean
+
 import pandas as pd
 import datetime as dt 
 import os
@@ -24,7 +24,7 @@ from matplotlib import dates as mpl_dates
 class Stock(Ticker):
     """
     Powerful interface to access, manage, visualize and store data about a stock.
-    It inherits from the Ticker class of the yfinace package.
+    It inherits from the Ticker class of the yfinance package.
 
     Args:
         Ticker: The stock symbol of the company that you want to interact with. It can be in all CAPS or in small CAPS
@@ -40,6 +40,7 @@ class Stock(Ticker):
     
     # details stored about every purchase made to the stock
     stockPurchaseHistoryColumns = ["DateofPurchase", "PurchasePrice", "StocksPurchased", "StockPrice", "Currency"]
+    roguePurchaseHistoryColumns = stockPurchaseHistoryColumns[1:]
     
     
     def __init__(self, ticker: str, displayCurrency: str =None, baseSaveDirectory: Union[str, os.PathLike]=None, isJSE: bool=False, *args, **kwargs):
@@ -47,22 +48,22 @@ class Stock(Ticker):
         
         # Populating attributes that are based on arguments with default values
         self.displayCurrency = displayCurrency if displayCurrency else self.cleanInfo()["financialCurrency"]
-        self.baseSaveDirectory = os.path.normpath(baseSaveDirectory) if baseSaveDirectory else baseSaveDirectory
+        self.baseSaveDirectory = os.path.normpath(baseSaveDirectory) if baseSaveDirectory else None
         self.isJSE = isJSE
 
         # Directory for the Cashflow, BalanceSheet and income Statements of the stock 
-        self.cashflowSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory,"cashflow"))
-        self.incomestatementSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory, "incomestatement"))
-        self.balancesheetSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory, "balancesheet"))
+        self.cashflowSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory,"cashflow")) if baseSaveDirectory else None
+        self.incomestatementSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory, "incomestatement")) if baseSaveDirectory else None
+        self.balancesheetSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory, "balancesheet")) if baseSaveDirectory else None
 
         # Path to the file containing the deprecated return value of the info method from the base class Ticker
-        self._StockInfoFilePath = os.path.normpath(os.path.join(self.baseSaveDirectory, "StockInfo.json"))
+        self._StockInfoFilePath = os.path.normpath(os.path.join(self.baseSaveDirectory, "StockInfo.json")) if baseSaveDirectory else None
 
         # Path to the file containing the purchase history made to the stock
-        self._StockPurchaseHistoryFilePath = os.path.normpath(os.path.join(self.baseSaveDirectory, "stockPurchaseHistory.json"))
+        self._StockPurchaseHistoryFilePath = os.path.normpath(os.path.join(self.baseSaveDirectory, "stockPurchaseHistory.json")) if baseSaveDirectory else None
         
         # Path to the file containing the purchases that were made to the stock but do not have a purchase date recorded
-        self._RogueStockHoldingsFilePath = os.path.join(self.baseStockDataDirectory, "rogueHoldings.json")
+        self._RogueStockHoldingsFilePath = os.path.join(self.baseSaveDirectory, "rogueHoldings.json") if baseSaveDirectory else None
 
     
     @property
