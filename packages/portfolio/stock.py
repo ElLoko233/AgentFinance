@@ -1,54 +1,67 @@
+# portfolio/stock.py
 """
-stock --> collects investment data of companies from yahoo finance.
+Provides a powerful interface to access, manage, visualize and store data about a stock
+
+This module contains the following classes:
+    -`Stock(ticker, displayCurrency=None, baseSaveDirectory=None, isJSE=False, *args, **kwargs)` - Powerful interface that allows you to access, manage, visualize and store data about a stock.
+
+The Stock class contains the following instance methods:
+    -`stock_purchase_history`
 """
-from ast import arguments
-from dis import dis
-from re import U
+from xmlrpc.client import boolean
 import pandas as pd
 import datetime as dt 
 import os
 import json
 
 from yfinance import Ticker
+from typing import Union
 from currency_converter import CurrencyConverter
+from matplotlib import pyplot as plt
+from matplotlib import dates as mpl_dates
 
 
 class Stock(Ticker):
+    """
+    Powerful interface to access, manage, visualize and store data about a stock.
+    It inherits from the Ticker class of the yfinace package.
+
+    Args:
+        Ticker: The stock symbol of the company that you want to interact with. It can be in all CAPS or in small CAPS
+        displayCurrency: The currency in which all the money related data will be displayed in
+        baseSaveDirectory: The base/main directory that will store all the saved details of the stock
+        isJSE: Whether the stock is from the JSE market
+    """
+    # object that has enables you to convert a value between two currencies
+    currencyConverter = CurrencyConverter()
     
-    def __init__(self, ticker, displayCurrency=None, baseSaveDirectory=os.path.normpath("./"), isJSE=False, *args, **kwargs):
+    # Keys for the dictionary returned by the cleanInfo method
+    cleanInfoKeys = ['sector', 'zip', 'fullTimeEmployees', 'longBusinessSummary', 'city', 'phone', 'country', 'website', 'address1', 'address2', "fax", "industry", "recommendationKey", "financialCurrency", "exchange", "shortName", "longName", "exchangeTimezoneName", "symbol", "logo_url"]
+    
+    # details stored about every purchase made to the stock
+    stockPurchaseHistoryColumns = ["DateofPurchase", "PurchasePrice", "StocksPurchased", "StockPrice", "Currency"]
+    
+    
+    def __init__(self, ticker: str, displayCurrency: str =None, baseSaveDirectory: Union[str, os.PathLike]=None, isJSE: bool=False, *args, **kwargs):
         super(Stock, self).__init__(ticker, *args, **kwargs)
-
-        # Base directory for the stock data saves
-        self.baseStockDataDirectory = os.path.normpath(os.path.join(baseSaveDirectory, self.ticker))
-
-        # Base directory of the Financial Statements of the stock
-        self.baseStockFinancialStatementsDirectory = os.path.join(self.baseStockDataDirectory, "FinancialStatements")
-
-        # Directory for the Cashflow, BalanceSheet and income Statements of the stock 
-        self.cashflowSaveDirectory = os.path.join(self.baseStockFinancialStatementsDirectory,"cashflow") 
-        self.incomestatementSaveDirectory = os.path.join(self.baseStockFinancialStatementsDirectory, "incomestatement")
-        self.balancesheetSaveDirectory = os.path.join(self.baseStockFinancialStatementsDirectory, "balancesheet")
-
-        # display currency, default to ZAR
-        self.displayCurrency = displayCurrency if displayCurrency else self.cleanInfo()["financialCurrency"] 
-        self.currencyConverter = CurrencyConverter()
-
-		# Determines whether the stock data requires JSE Yahoo correction or not
+        
+        # Populating attributes that are based on arguments with default values
+        self.displayCurrency = displayCurrency if displayCurrency else self.cleanInfo()["financialCurrency"]
+        self.baseSaveDirectory = os.path.normpath(baseSaveDirectory) if baseSaveDirectory else baseSaveDirectory
         self.isJSE = isJSE
 
-        # List of the available keys to the clean info data
-        self.cleanInfoKeys = ['sector', 'zip', 'fullTimeEmployees', 'longBusinessSummary', 'city', 'phone', 'country', 'website', 'address1', 'address2', "fax", "industry", "recommendationKey", "financialCurrency", "exchange", "shortName", "longName", "exchangeTimezoneName", "symbol", "logo_url"]
+        # Directory for the Cashflow, BalanceSheet and income Statements of the stock 
+        self.cashflowSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory,"cashflow"))
+        self.incomestatementSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory, "incomestatement"))
+        self.balancesheetSaveDirectory = os.path.normpath(os.path.join(self.baseSaveDirectory, "balancesheet"))
 
-        # Stock info file
-        self._StockInfoFilePath = os.path.join(self.baseStockDataDirectory, "StockInfo.json")
+        # Path to the file containing the deprecated return value of the info method from the base class Ticker
+        self._StockInfoFilePath = os.path.normpath(os.path.join(self.baseSaveDirectory, "StockInfo.json"))
 
-        # Stock purchase history json table file
-        self._StockPurchaseHistoryFilePath = os.path.join(self.baseStockDataDirectory, "stockPurchaseHistory.json")
-
-        # Stock purchase history columns 
-        self._stockPurchaseHistoryColumns = ["DateofPurchase", "PurchasePrice", "StocksPurchased", "StockPrice", "Currency"]
+        # Path to the file containing the purchase history made to the stock
+        self._StockPurchaseHistoryFilePath = os.path.normpath(os.path.join(self.baseSaveDirectory, "stockPurchaseHistory.json"))
         
-        # Stock rogue holdings json table file
+        # Path to the file containing the purchases that were made to the stock but do not have a purchase date recorded
         self._RogueStockHoldingsFilePath = os.path.join(self.baseStockDataDirectory, "rogueHoldings.json")
 
     
@@ -73,7 +86,7 @@ class Stock(Ticker):
                 return df           
             
             # Converting the dates into datetime objects
-            df["DateofPurchase"] = [dt.datetime.strptime(date, "%Y-%m-%d") for date in df["DateofPurchase"]]
+            df["DateofPurchase"] = [dt.datetime.strptime(date, "%Y-%m-%d") for date in df["DateofPurchase"] if date]
             
             # making the dates into the data frame indexes
             df.set_index("DateofPurchase", inplace=True)
@@ -136,7 +149,22 @@ class Stock(Ticker):
                 purchaseValue += value
         
         return purchaseValue
-
+    @property
+    def _numberofpurchases(self) -> int:
+        """        
+        Returns:
+            int: The number of purchases made to the stock
+        """
+        numberofpurchases = 0
+        return self.stock_purchase_history
+        # getting the number of recorded purchases
+        numberofpurchases += self.stock_purchase_history.shape[0]
+        
+        # getting the number of rogue purchases
+        numberofpurchases += self.rogueHoldings.shape[0]
+        
+        return numberofpurchases
+        
     @property
     def shares(self) -> float:
         """This function will return the number of shares owned in the company and if purchase history data table does not exist an exception will raised
@@ -282,13 +310,27 @@ class Stock(Ticker):
 
         This function graphs the price of the stocks for specific periods and intervals
         """
-    
+        # Getting the data that will be graphed
+        data = self.history(*args, **kwargs)
+        
+        # Extracting the x value from the data
+        x = data.index
+        
+        # extracting the y value from the data
+        y = data["Close"]
+        
+        # ploting the data
+        plt.plot_date(x, y, linestyle='solid')
+        plt.gcf().autofmt_xdate()
+        plt.show()
+           
     def isCurrentPriceAvgDiscount(self, discount) -> bool:
         """
         arg: discount: a float that will be used to determine the criteria
 
         check whether the current price of the stock is a discount relative to the average purchase price you made towards the stock
         """
+        # getting the number of payments made
     
     def addRoguePurchase(self, purchasePrice: float, stocksPurch: float, purchaseCurrency: str=None, save: bool=True) -> pd.DataFrame:
         """Updates the RoguePurchase history json data table
@@ -356,7 +398,7 @@ class Stock(Ticker):
             raise ValueError("Both stocksPurch and purchasePrice do not have a value. Please provide data for either one")
 
         # Acquire the stock price of the stock on the given date
-        stockPrice = self.history(start=dateOfpurch, end=dateOfpurch + dt.timedelta(days=1), interval="1d")["Close"][dateOfpurch]
+        stockPrice = self.history(start=(dateOfpurch - dt.timedelta(days=2)), end=(dateOfpurch + dt.timedelta(days=2)), interval="1d")["Close"][dateOfpurch]
 
         # Calculating the purchase price of the stock if it is not given
         if not purchasePrice:
@@ -468,9 +510,8 @@ class Stock(Ticker):
         return os.path.exists(self._RogueStockHoldingsFilePath)
     
 if __name__ == '__main__':
-    tsla = Stock("msft", baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance", displayCurrency="ZAR")
+    stock = Stock("msft", baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance", displayCurrency="ZAR")
     
-    if not os.path.exists(tsla.baseStockDataDirectory):
-        tsla.loadDirectories()
-
-    print(tsla.balance_sheet)
+    if not os.path.exists(stock.baseStockDataDirectory):
+        stock.loadDirectories()
+        
