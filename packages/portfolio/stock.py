@@ -13,6 +13,7 @@ import pandas as pd
 import datetime as dt 
 import os
 import json
+import pathlib
 
 from yfinance import Ticker
 from typing import Union
@@ -44,10 +45,10 @@ class Stock(Ticker):
     
     
     def __init__(self, ticker: str, displayCurrency: str =None, baseSaveDirectory: Union[str, os.PathLike]=None, isJSE: bool=False, *args, **kwargs):
-        super(Stock, self).__init__(ticker, *args, **kwargs)
+        super().__init__(ticker, *args, **kwargs)
         
         # Populating attributes that are based on arguments with default values
-        self.displayCurrency = displayCurrency if displayCurrency else self.cleanInfo()["financialCurrency"]
+        #self.displayCurrency = displayCurrency if displayCurrency else self.info["financialCurrency"]
         self.baseSaveDirectory = os.path.normpath(baseSaveDirectory) if baseSaveDirectory else None
         self.isJSE = isJSE
 
@@ -65,6 +66,32 @@ class Stock(Ticker):
         # Path to the file containing the purchases that were made to the stock but do not have a purchase date recorded
         self._RogueStockHoldingsFilePath = os.path.join(self.baseSaveDirectory, "rogueHoldings.json") if baseSaveDirectory else None
 
+    
+    def loadDirectories(self):
+        """This function creates the necessary directories for storing data about the stock
+
+        Raises:
+            ValueError: If the base directory is not provided during initialization
+        """
+        
+        if self.baseSaveDirectory:
+            
+            # Getting the keys to directory based attributes
+            directoryAttributeKeys = [x for x in self.__dict__.keys() if x.endswith("Directory")]
+
+            # Creating the directories 
+            for key in directoryAttributeKeys:
+                
+                # Accessing the path created from initialization
+                directory = self.__dict__[key]
+                
+                # Checking if directory already exist
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
+                    
+        else:
+            raise ValueError(f"No base directory for storing the data was provided. self.baseSaveDirectory = {self.baseSaveDirectory}")        
+        
     
     @property
     def stock_purchase_history(self) -> pd.DataFrame:
@@ -150,6 +177,7 @@ class Stock(Ticker):
                 purchaseValue += value
         
         return purchaseValue
+    
     @property
     def _numberofpurchases(self) -> int:
         """        
@@ -243,21 +271,7 @@ class Stock(Ticker):
             with open(self._StockInfoFilePath, 'r') as file:
                 data = json.load(file)
 
-            return data
- 
-    def loadDirectories(self):
-        """
-            Responsible for loading the required directories into memory
-        """
-
-        # Getting the keys to directory based attributes
-        directoryAttributeKeys = [x for x in self.__dict__.keys() if x.endswith("Directory")]
-
-        # Creating the directories 
-        for key in directoryAttributeKeys:
-            # Checking if folder already exist
-            if not os.path.exists(self.__dict__[key]):
-                os.makedirs(self.__dict__[key])
+            return data        
 
     def __JSE_YAHOO_CORRECTION(self, stockHistory):
         """
@@ -511,8 +525,11 @@ class Stock(Ticker):
         return os.path.exists(self._RogueStockHoldingsFilePath)
     
 if __name__ == '__main__':
-    stock = Stock("msft", baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance", displayCurrency="ZAR")
+    # stock = Stock("msft", baseSaveDirectory="C:/Users/lelet/Desktop(offline)/Personal Finacial Records/InvestmentPortfolio/InvestementTracker/AgentFinance", displayCurrency="ZAR")
     
-    if not os.path.exists(stock.baseStockDataDirectory):
-        stock.loadDirectories()
+    # if not os.path.exists(stock.baseStockDataDirectory):
+    #     stock.loadDirectories()
+    stock = Stock("msft")
+    
+    print(stock.displayCurrency)
         
